@@ -3,6 +3,7 @@
 """
 ORTHO
 Makefile interFACE (makeface) command-line interface
+Note that you should debug with `python -c "import ortho;ortho.get_targets(verbose=True)"`
 """
 
 from __future__ import print_function
@@ -12,16 +13,18 @@ from .dev import tracebacker
 from .misc import str_types
 from .config import set_config,setlist,unset,config,set_hash
 from .environments import manage
+from .bootstrap import bootstrap
+from .imports import importer,glean_functions
 
 # any functions from ortho exposed to CLI must be noted here and imported above
-expose_funcs = {'set_config','setlist','unset','set_hash','manage','config'}
+expose_funcs = {'set_config','setlist','unset','set_hash','manage','config','bootstrap'}
 expose_aliases = {'set_config':'set'}
 
 # collect functions once
 global funcs,_ortho_keys_exposed
 funcs = None
 
-def collect_functions():
+def collect_functions(verbose=False):
 	"""
 	Collect available functions.
 	"""
@@ -34,29 +37,29 @@ def collect_functions():
 	from .config import set_config,setlist,unset
 	# accrue functions over sources sequentially
 	for source in sources:
-		# if source is a script
-		if os.path.isfile(source):
-			try: mod = importlib.import_module(os.path.splitext(source)[0])
+		if os.path.isfile(source) or os.path.isdir(source):
+			try: 
+				if verbose: print('status','importing source %s'%source)
+				mod = importer(source,verbose=verbose)
 			# if importing requires env then it is not ready when we get makefile targets
-			except:
-				# trick to get function names from a script without importing
-				#! note that this does not consider __all__ properly
-				import ast
-				with open(source) as fp:
-					code = fp.read()
-					tree = ast.parse(code)
-				function_gleaned = [i.name for i in tree.body if i.__class__.__name__=='FunctionDef']
-				funcs.update(**dict([(i,str(source)) for i in function_gleaned]))
+			except Exception as e:
+				# debug imports during dev with `ortho.get_targets(verbose=True)`
+				if verbose: print('exception',e)
+				if os.path.isdir(source):
+					raise Exception('failed to import %s '%source+
+						'and cannot glean functions because it is not a file')
+				else: funcs.update(**glean_functions(source))
 			else:
-				incoming = dict([(k,v) for k,v in mod.__dict__.items() if callable(v)])
+				incoming = dict([(k,v) for k,v in mod.items() if callable(v)])
 				# remove items if they are not in all
-				mod_all = mod.__dict__.get('__all__',[])
-				if mod_all: incoming_exposed = dict([(k,v) for k,v in incoming.items() if k in mod_all])
+				mod_all = mod.get('__all__',[])
+				# also allow __all__ to be temporarily blanked during development
+				if '__all__' in mod or mod_all: 
+					incoming_exposed = dict([(k,v) for k,v in incoming.items() if k in mod_all])
 				else: incoming_exposed = incoming
+				if verbose: print('status','trimming source %s to __all__=%s'%(
+					source,incoming_exposed.keys()))
 				funcs.update(**incoming_exposed)
-		# if source is a directory
-		elif os.path.isdir(source):
-			raise Exception('development')
 		else: raise Exception('cannot locate code source %s'%source)
 	# note which core functions are exposed so we can filter the rest
 	global _ortho_keys_exposed
@@ -64,14 +67,13 @@ def collect_functions():
 	# no return because we just refresh funcs in globals
 	return
 
-def get_targets():
+def get_targets(verbose=False):
 	"""
 	Announce available function names.
+	Note that any printing that happens during the make call to get_targets is hidden by make.
 	"""
 	global _ortho_keys # from __init__.py
-	if not funcs: 
-		print('collecting functions!')
-		collect_functions()
+	if not funcs: collect_functions(verbose=verbose)
 	targets = funcs
 	# filter out utility functions from ortho
 	target_names = list(set(targets.keys())-(set(_ortho_keys)-_ortho_keys_exposed))
@@ -82,7 +84,6 @@ def run_program(_do_debug=False):
 	Interpret the command-line arguments.
 	"""
 	global funcs
-	if not funcs: collect_functions()
 	ignore_flags = ['w','--','s','ws','sw']
 	arglist = [i for i in list(sys.argv) if i not in ignore_flags]
 	# previously wrote the backend script i.e. makeface.py from the makefile via:
@@ -94,6 +95,8 @@ def run_program(_do_debug=False):
 			'however we received %s'%arglist)
 	if not arglist: raise Exception('no arguments to parse')
 	else: arglist = arglist[1:]
+	if arglist[0] in ['set','unset']: funcs = {'set':set_config,'unset':unset}
+	elif not funcs: collect_functions()
 	args,kwargs = [],{}
 	arglist = list(arglist)
 	funcname = arglist.pop(0)
@@ -134,8 +137,9 @@ def run_program(_do_debug=False):
 		print('error','the function `%s` from `%s` was only inferred and not imported. '
 			'this is commonly due to a failure to import the module '
 			'because you do not have the right environment'%(funcname,funcs[funcname]))
-		print('status','to investigate the problem we will now import the module so you can see the error')
-		try: importlib.import_module(funcs[funcname])
+		print('status','to investigate the problem we will now import the module so you can see the error. '
+			'importing %s'%funcs[funcname])
+		try: mod = importer(funcs[funcname])
 		except Exception as e: 
 			tracebacker(e)
 			print('error','to continue you can correct the script. '
@@ -145,7 +149,8 @@ def run_program(_do_debug=False):
 	# we must check for ipdb here before we try the target function
 	try: import ipdb as pdb_this
 	except: import pdb as pdb_this
-	try: funcs[funcname](*args,**kwargs)
+	try: 
+		funcs[funcname](*args,**kwargs)
 	#? catch a TypeError in case the arguments are not formulated properly
 	except Exception as e: 
 		tracebacker(e)

@@ -11,7 +11,7 @@ def listify(x):
 	"""Turn a string or a list into a list."""
 	if type(x)==str: return [x]
 	elif type(x)==list: return x
-	else: raise Exception('str_or_list expects a string or a list')
+	else: raise Exception('listify expects a string or a list')
 
 def asciitree(obj,depth=0,wide=2,last=[],recursed=False):
 	"""
@@ -78,7 +78,9 @@ def treeview(data,style=None):
 	if not style: style = conf.get('tree_style','unicode')
 	if style=='unicode': return asciitree(data)
 	elif style=='json': return print(json.dumps(data))
-	elif style=='pprint': return pprint.pprint(data)
+	elif style=='pprint': 
+		import pprint
+		return pprint.pprint(data)
 	else: raise Exception('invalid style %s'%style)
 
 def say(text,*flags):

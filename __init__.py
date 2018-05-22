@@ -5,18 +5,25 @@ import os,sys
 
 # import ortho with wildcard because we control everything here
 expose = {
-	'cli':['get_targets','run_program'],
-	'dev':['tracebacker'],
 	'bash':['command_check'],
-	'misc':['listify','treeview','str_types','say'],
+	'bootstrap':['bootstrap'],
+	'cli':['get_targets','run_program'],
 	'config':['set_config','setlist','unset','read_config','write_config'],
-	'environments':['manage'],}
+	'data':['check_repeated_keys'],
+	'dev':['tracebacker'],
+	'environments':['manage'],
+	'imports':['importer'],
+	'misc':['listify','treeview','str_types','say'],}
 
 # use `python -c "import ortho"` to bootstrap the makefile
-if (__file__!='ortho/__init__.py' or not os.path.isdir('ortho')): 
-	sys.exit(1)
+if (os.path.splitext(os.path.basename(__file__))[0]!='__init__' or not os.path.isdir('ortho')): 
+	if not os.path.isdir('ortho'):
+		#! currently ortho must be a local module (a folder)
+		raise Exception('current directory is %s and ortho folder is missing'%os.getcwd())
+	else: raise Exception('__file__=%s'%__file__)
 elif not os.path.isfile('makefile'):
 	import shutil
+	print('bootstrapping makefile from ortho')
 	shutil.copy('./ortho/makefile.bak','./makefile')
 	sys.exit(0)
 else: pass
@@ -35,7 +42,7 @@ def prepare_print(override=False):
 		_print = print
 		def print_stylized(*args,**kwargs):
 			"""Custom print function."""
-			key_leads = ['status','warning','error','note','usage']
+			key_leads = ['status','warning','error','note','usage','exception','except','question','run']
 			if len(args)>0 and args[0] in key_leads:
 				return _print('[%s]'%args[0].upper(),*args[1:])
 			else: return _print(*args,**kwargs)
