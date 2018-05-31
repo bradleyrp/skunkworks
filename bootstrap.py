@@ -14,6 +14,7 @@ from __future__ import print_function
 # you could also make your own default configuration for use with ortho
 default_configuration = {
 	'commands':['cli.py'],
+	#! tee will always log to file: 'tee':'log-last',
 }
 
 def bootstrap_default(): 
