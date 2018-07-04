@@ -13,7 +13,7 @@ from __future__ import print_function
 # see environments.py for instructions on (re)-loading a complicated envs section after bootstrapping
 # you could also make your own default configuration for use with ortho
 default_configuration = {
-	'commands':['cli.py'],
+	'commands':[],
 	#! tee will always log to file: 'tee':'log-last',
 }
 
