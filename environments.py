@@ -6,9 +6,6 @@ from .bash import bash
 from .config import write_config,read_config
 import sys,os,datetime,time
 
-global conf # pylint: disable=undefined-variable
-conf = {}
-
 __doc__ = """
 ENVIRONMENT MANAGER
 Read the `envs` key from the config.json (or use a default) to construct or refresh an environment.
@@ -65,7 +62,7 @@ default_envs = dict([
 			'reqs':'reqs.yaml',},
 		'name':'py%d'%v,
 		'update':False,
-		'python_version':2,
+		'python_version':v,
 		'install_commands':[
 			"this = dict(sources_installer=self.sources['installer'],where=self.where,"+
 				"extra=' -u' if self.update else '')",
@@ -90,7 +87,7 @@ default_envs = dict([
 class Factory:
 	def __init__(self,*args,**kwargs):
 		if kwargs: raise Exception('unprocess kwargs %s'%kwargs)
-		self.conf = conf
+		self.conf = conf # pylint: disable=undefined-variable
 		self.envs = self.conf.get('envs',default_envs)
 		self.logs_space()
 		if not self.envs: raise Exception('no environments yet!')
@@ -98,8 +95,8 @@ class Factory:
 			if kwargs.get('all',False):
 				# no arguments and the all kwargs runs through all environments
 				for name,detail in self.envs.items(): self.validate(name,detail)
-			else: print('warning','use `make env_list` to see available environments and use '
-				'`make environ <name>` to install or refresh one or `make environ all=True` for all')
+			else: print('warning','use `make env list` to see available environments and use '
+				'`make env <name>` to install or refresh one or `make env all=True` for all')
 		else: 
 			# only make environments for the arguments
 			for arg in args:
@@ -130,7 +127,8 @@ class Factory:
 			# check sources to preempt an anaconda error
 			for source_name,source_fn in self.sources.items():
 				if not os.path.isfile(source_fn):
-					raise Exception('cannot find source "%s" requested by env %s: %s'%(
+					raise Exception(('we need an additional requirement. '+
+						'cannot find source "%s" requested by env %s: %s')%(
 						source_name,name,source_fn))
 			# use exec to loop over commands. note that the install_commands can use the where,sources,style,
 			# ... etc which are set above by default from the detail. note that the default configuration
@@ -173,11 +171,13 @@ with open(os.path.join(env_etc_conda,'deactivate.d','env_vars.sh'),'w') as fp:
 
 def environ(*args,**kwargs): 
 	"""The env command instantiates a Factory."""
-	Factory(*args,**kwargs)
+	if 'list' in args and len(args)>1: raise Exception('cannot run `make env list` with extra arguments')
+	elif args==('list',): env_list()
+	else: Factory(*args,**kwargs)
 
 def env_list(text=False):
 	from .misc import treeview
-	conf_this = conf
+	conf_this = conf # pylint: disable=undefined-variable
 	treeview(conf_this.get('envs',default_envs),style={False:'unicode',True:'pprint'}[text])
 	print('note','The following dictionaries are instructions for building environments. '
 		'You can build a new environment by running `make env <name>`. See environments.py for more docs.')

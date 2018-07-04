@@ -5,7 +5,6 @@ import os,sys
 
 # import ortho with wildcard because we control everything here
 # note that CLI functions are set in cli.py
-#! needs cluster/backrun function
 expose = {
 	'bash':['command_check','bash'],
 	'bootstrap':['bootstrap'],
@@ -16,7 +15,8 @@ expose = {
 	'environments':['environ','env_list','register_extension','load_extension'],
 	'imports':['importer'],
 	'unittester':['unittester'],
-	'misc':['listify','treeview','str_types','say'],}
+	'misc':['listify','treeview','str_types','say'],
+	'reexec':['iteratively_execute','interact']}
 
 # use `python -c "import ortho"` to bootstrap the makefile
 if (os.path.splitext(os.path.basename(__file__))[0]!='__init__' or not os.path.isdir('ortho')): 
