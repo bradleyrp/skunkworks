@@ -60,7 +60,7 @@ def prepare_print(override=False):
 		def print_stylized(*args,**kwargs):
 			"""Custom print function."""
 			key_leads = ['status','warning','error','note','usage',
-				'exception','except','question','run','tail','watch']
+				'exception','except','question','run','tail','watch','bash']
 			if len(args)>0 and args[0] in key_leads:
 				return _print('[%s]'%args[0].upper(),*args[1:])
 			else: return _print(*args,**kwargs)
@@ -124,7 +124,6 @@ if tee_fn:
 
 ### LEGACY FUNCTIONS
 
-# shorthand for full path even if you use tilde
 def abspath(path): 
 	"""Legacy wrapper for resolving absolute paths that may contain tilde."""
 	return os.path.abspath(os.path.expanduser(path))
