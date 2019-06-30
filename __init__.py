@@ -5,7 +5,8 @@ ORTHO MODULE DOCSTRING
 """
 
 from __future__ import print_function
-import os,sys
+import os,sys,re,subprocess
+from .misc import str_types
 _init_keys = globals().keys()
 
 # note that CLI functions are set in cli.py
@@ -13,28 +14,55 @@ _init_keys = globals().keys()
 # or at least the expose functions are elevated to the top level of ortho
 # but you can still get other functions in submodules in the usual way
 # note that the expose table also sends conf there hence the empties
-#! cannot do e.g. import ortho.submodule if the submodule is not below
+# cannot do e.g. import ortho.submodule if the submodule is not below
+# any submodule that needs to get the conf should also be on this list
 expose = {
 	'bash':['command_check','bash'],
 	'bootstrap':[],
+	'background':['backrun'],
 	'cli':['get_targets','run_program'],
-	'config':['set_config','setlist','set_list','set_dict','unset','read_config','write_config',
-		'config_fold'],
-	'dev':['tracebacker'],
+	'config':['set_config','setlist','set_list','set_dict','unset',
+		'read_config','write_config','config_fold','set_hook',
+		'config_hook_get'],
+	'data':['check_repeated_keys','delve','delveset','catalog',
+		'json_type_fixer','dictsub','dictsub_strict','dictsub_sparse',
+		'unique_ordered'],
+	'dev':['tracebacker','debugger'],
+	'dictionary':['DotDict','MultiDict'],
 	'environments':['environ','env_list','register_extension','load_extension'],
-	'data':['check_repeated_keys'],
+	'handler':['Handler'],
+	'hooks':['hook_merge'],
+	# note that you cannot have identical names for the module and a function
+	'hypos':['hypothesis','sweeper'],
 	'imports':['importer'],
-	#'queue':['qbasic'],
 	'unit_tester':['unit_tester'],
-	'misc':['listify','treeview','str_types','string_types','say'],
-	'reexec':['iteratively_execute','interact']}
+	'misc':['listify','unique','uniform','treeview','str_types',
+		'string_types','say','ctext','confirm','status','Observer',
+		'compare_dicts','Hook','mkdirs'],
+	'modules':['sync'],
+	'packman':['packs','github_install'],
+	'ports':['check_port'],
+	'reexec':['iteratively_execute','interact'],
+	'requires':['requires_program','requires_python','requires_python_check',
+		'is_terminal_command'],
+	'timer':['time_limit','TimeoutException'],}
+
+# note that packages which use ortho can just import the items above directly
+#   however ortho submodules have to import from the correct submodule `e.g. from .misc import str_types`
+#   which means that we have to update these internal imports if we later move around some of the functions
 
 # use `python -c "import ortho"` to bootstrap the makefile
 if (os.path.splitext(os.path.basename(__file__))[0]!='__init__' or not os.path.isdir('ortho')): 
 	if not os.path.isdir('ortho'):
-		#! currently ortho must be a local module (a folder)
-		raise Exception('current directory is %s and ortho folder is missing'%os.getcwd())
+		# check site packages
+		reqs = subprocess.check_output([sys.executable, '-m', 'pip', 'freeze'])
+		installed_packages = [r.decode().split('==')[0] for r in reqs.split()]
+		if 'ortho' not in installed_packages:
+			#! currently ortho must be a local module (a folder)
+			raise Exception('current directory is %s and ortho folder is missing'%os.getcwd())
+		else: pass
 	else: raise Exception('__file__=%s'%__file__)
+# makefile is bootstrapped if we have an ortho directory, hence not if using pip-installed ortho
 elif not os.path.isfile('makefile'):
 	import shutil
 	print('bootstrapping makefile from ortho')
@@ -47,8 +75,10 @@ def prepare_print(override=False):
 	Prepare a special override print function.
 	This decorator stylizes print statements so that printing a tuple that begins with words like `status` 
 	will cause print to prepend `[STATUS]` to each line. This makes the output somewhat more readable but
-	otherwise does not affect printing. We use builtins to distribute the function. Any code which imports
-	`print_function` from `__future__` gets the stylized print function.
+	otherwise does not affect printing. We use builtins to distribute the function. Any python 2 code which 
+	imports `print_function` from `__future__` gets the stylized print function. Any python 3 code which 
+	uses print will print this correctly. The elif which uses a regex means that the overloaded print
+	can turn e.g. print('debug something bad happened')	into "[DEBUG] something bad happened" in stdout.
 	"""
 	# python 2/3 builtins
 	try: import __builtin__ as builtins
@@ -58,14 +88,28 @@ def prepare_print(override=False):
 		# every script must import print_function from __future__ or syntax error
 		# hold the standard print
 		_print = print
+		key_leads = ['status','warning','error','note','usage',
+			'exception','except','question','run','tail','watch',
+			'bash','debug']
+		key_leads_regex = re.compile(r'^(?:(%s)\s)(.+)$'%'|'.join(key_leads))
 		def print_stylized(*args,**kwargs):
 			"""Custom print function."""
-			key_leads = ['status','warning','error','note','usage',
-				'exception','except','question','run','tail','watch','bash']
-			if len(args)>0 and args[0] in key_leads:
+			if (len(args)>0 and 
+				isinstance(args[0],str_types) and args[0] in key_leads):
 				return _print('[%s]'%args[0].upper(),*args[1:])
+			# regex here adds very little time and allows more natural print 
+			#   statements to be capitalized
+			#! note that we can retire all print('debug','message') statements
+			elif len(args)==1 and isinstance(args[0],str_types):
+				match = key_leads_regex.match(args[0])
+				if match: return _print(
+					'[%s]'%match.group(1).upper(),match.group(2),**kwargs)
+				else: return _print(*args,**kwargs)
 			else: return _print(*args,**kwargs)
 		# export custom print function before other imports
+		# this code ensures that in python 3 we overload print
+		#   while any python 2 code that wishes to use overloaded print
+		#   must of course from __future__ import print_function
 		builtins.print = print_stylized
 
 # special printing happens before imports
@@ -97,7 +141,6 @@ config_fn = 'config.json'
 # hardcoded default
 default_config = {}
 
-# read the configuration here
 # pylint: disable=undefined-variable
 conf = config.read_config(config_fn,default=default_config)
 
@@ -110,7 +153,8 @@ _ortho_keys = list(set([i for j in [v for k,v in expose.items()] for i in j]))
 for mod,ups in expose.items():
 	# note the utility functions for screening later
 	globals()[mod].__dict__['_ortho_keys'] = _ortho_keys
-	for up in ups: globals()[up] = globals()[mod].__dict__[up]
+	for up in ups: 
+		globals()[up] = globals()[mod].__dict__[up]
 
 # if the tee flag is set then we dump stdout and stderr to a file
 tee_fn = conf.get('tee',False)

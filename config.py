@@ -10,25 +10,41 @@ import os,json,re,sys
 from .misc import treeview,str_types
 from .bootstrap import bootstrap
 from .data import delve,delveset
+from .hooks import hook_handler
 
 # exported in from __init__.py (defined for linting)
 conf = {}
 config_fn = None
 
+def check_ready():
+	global config_fn
+	if not config_fn:
+		#! raise Exception('ortho import failure. config_fn is not set!')
+		#! print('warning ortho import failure. config_fn is not set!')
+		pass
+		#!!! revisit this
+
 def abspath(path):
 	"""Get the right path."""
 	return os.path.abspath(os.path.expanduser(path))
 
-def read_config(source=None,default=None):
+def read_config(source=None,cwd=None,default=None,hook=False,strict=True):
 	"""Read the configuration."""
 	global config_fn
-	source = source if source else config_fn
+	check_ready()
+	if source and cwd:
+		raise Exception('source and cwd are mutually exclusive: %s, %s'%(source,cwd))
+	elif cwd: source = os.path.join(cwd,config_fn)
+	else: source = source if source else config_fn
+	if source==None: raise Exception('the source value is None, which typically occurs when you try to '
+		'access ortho.conf before everything is imported and ortho/__init__.py sets config.py, config_fn to'
+		'e.g. config.json. we recommend checking your import scheme.')
 	locations = [abspath(source),os.path.join(os.getcwd(),source)]
 	found = next((loc for loc in locations if os.path.isfile(loc)),None)
 	if not found and default==None: raise Exception('cannot find file "%s"'%source)
 	elif not found and default!=None: 
 		# when new users run make for the first time and create the config.json it also runs bootstrap.py
-		# ... to set up any other paths from the dependent module
+		#   to set up any other paths from the dependent module
 		# a minimal bootstrap.py might be: def bootstrap_default(): return {'commands':['path/to/code.py']}
 		boot = bootstrap(post=False)
 		if type(boot)==dict:
@@ -39,12 +55,23 @@ def read_config(source=None,default=None):
 		write_config(config=default,source=locations[0])
 		return default
 	else: 
-		with open(found,'r') as fp: 
-			return json.load(fp)
+		with open(found,'r') as fp: result = json.load(fp)
+		# configuration keys starting with the "@" sign are special hooks
+		#   which can either include a direct value or a function to get them
+		if hook==True: hook_handler(result)
+		elif isinstance(hook,str_types): 
+			hook_handler(result,this=hook,strict=strict)
+		return result
 
+def config_hook_get(hook,default):
+	"""Get a hook if it exists otherwise return a default."""
+	conf = read_config(hook=hook,strict=False)
+	return conf.get(hook,default)
+	
 def write_config(config,source=None):
 	"""Write the configuration."""
 	global config_fn
+	check_ready()
 	with open(source if source else config_fn,'w') as fp:
 		json.dump(config,fp)
 
@@ -72,7 +99,7 @@ def interpret_command_text(raw):
 
 def set_config(*args,**kwargs):
 	"""
-	Update the configuration in a local configuration file (typically ``config.py``).
+	Update the configuration in a local configuration file (typically ``config.json``).
 	This function routes ``make set` calls so they update flags using a couple different syntaxes.
 	We make a couple of design choices to ensure a clear grammar: a
 	1. a single argument sets a boolean True (use unset to remove the parameter and as a style convention, 
@@ -92,6 +119,24 @@ def set_config(*args,**kwargs):
 	# write the config
 	conf.update(**outgoing)
 	write_config(conf)
+
+def set_hook(*args,**kwargs):
+	"""
+	Hooks get the "@" prepended to keys but the makefile interface does 
+	not allow this easily so we provide this function.
+	"""
+	args = [m for n in [('@%s'%args[2*i],args[2*i+1]) for i in range(int(len(args)/2))] for m in n]
+	kwargs = dict([('@%s'%i,j) for i,j in kwargs.items()])
+	# note that we typically use set_dict to set dictionary items but many hooks will use dictionary
+	#   forms, so we try an eval here in case it's a dict. set_dict does more than this to set children
+	#   without obliterating the other leaves of t he t ree
+	for k,v in kwargs.items():
+		#! dangerous?
+		try: kwargs[k] = eval(v)
+		except: pass
+	# note that since conf requires a read, and read would substitute @key with key, setting a hook
+	#   will displace the non-hook keys automatically
+	set_config(*args,**kwargs)
 
 def setlist(*args):
 	"""
@@ -122,7 +167,8 @@ def unset(*args):
 def config(text=False):
 	"""Print the configuration."""
 	global conf,config_fn # from __init__.py
-	treeview({config_fn:conf},style={False:'unicode',True:'pprint'}[text])
+	check_ready()
+	treeview({config_fn:conf},style={False:'unicode',True:'pprint','json':'json'}[text])
 
 def set_dict(*args,**kwargs):
 	"""
@@ -175,8 +221,15 @@ def config_fold(fn,key):
 	delveset(conf,key,value=incoming[key])
 	write_config(conf)
 
-def look():
+def look(at='config.json'):
 	"""Drop into a debugger with the conf available."""
+	#! replace this with code.interact?
+	if at and not os.path.isfile(at): raise Exception('cannot find %s'%at)
+	elif at:
+		name = re.sub(r'\.','_',re.match(r'^(.*?)\.json',at).group(1))
+		with open(at) as fp: globals()[name] = json.load(fp)
+		print('status','looking at %s as %s'%(at,name))
+	else: pass
 	try: 
 		import ipdb
 		ipdb.set_trace()
@@ -184,4 +237,4 @@ def look():
 	try:
 		import pdb
 		pdb.set_trace()
-	except: raise Exception('cannot find ipdb or pdbed')
+	except: raise Exception('cannot find ipdb or pdb')
